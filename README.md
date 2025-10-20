@@ -1,20 +1,19 @@
 # RAG System Prototype
 
 **Author:** Jinpeng Zhang  
-**Date:** October 2025  
 
 ---
 
-## 📘 Overview
+## Overview
 
 This project presents the design of a **Retrieval-Augmented Generation (RAG)** system that takes a user query and returns a **human-language answer with accurate citations** from stored PDF documents (medical reports, trial protocols, etc...).
 
-> **Goal:**  
-> `Query → Human-language Response + Citations (highlighted snippets)`
+**Goal:**  
+`Query → Human-language Response + Citations (highlighted snippets)`
 
 ---
 
-## 🧩 System Architecture
+## System Architecture
 
 The system is divided into the following core components:
 
@@ -35,7 +34,7 @@ Using the **BAAI/bge-m3** embedding model (8192-token window) enables:
 
 ### 3. Embedding
 **Model:** `BAAI/bge-m3`  
-- **Performance:** State-of-the-art on MTEB benchmark  
+- **Performance:** State-of-the-art on Massive Text Embedding Benchmark
 - **Context Window:** 8192 tokens  
 - **Vector Size:** 1024 dimensions  
 
@@ -53,22 +52,11 @@ Using the **BAAI/bge-m3** embedding model (8192-token window) enables:
 5. **Citation Formatting:** Link each claim to its source and highlight in the output.  
 
 **Example Prompt:**
-> “You are a helpful medical assistant. Using only the context below, answer the user's question.  
-> You must cite the source for every claim you make, referencing the ‘source’ and ‘page’.”
+“You are a helpful medical assistant. Using only the context below, answer the user's question. You must cite the source for every claim you make, referencing the ‘source’ and ‘page’.”
 
 ---
 
-## 🚀 Possible Improvements
-
-### 🔍 Retrieval Accuracy
-- **Hybrid Search:** Combine semantic and keyword-based search.  
-- **Reranking:** Use a cross-encoder to refine top results.  
-
-### 🧠 Preventing Hallucinations
+### Preventing Hallucinations
+LLMs often can generate responses that are not true or reliable therefore in order to prevent these hallucinations we can implement:
 - **Stricter Prompting:** Instruct LLMs to answer “I do not have enough information” when uncertain.  
 - **Citation Verification:** Ensure all generated claims map back to retrieved context.  
-
-### ⚙️ Scalability, Performance & Maintainability
-- **Scalability:** Containerize components (Docker, Kubernetes).  
-- **Performance:** Use `TensorRT-LLM` for fast inference and semantic caching for common queries.  
-- **API Layer:** Expose RAG functionality via REST API for easy integration.  

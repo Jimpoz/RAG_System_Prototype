@@ -119,13 +119,13 @@ class QueryPipeline:
                             For every piece of information you use, you *must* cite the context number it came from, like [Context 1], [Context 2], etc."""
         
         user_prompt = f"""---
-CONTEXT:
-{context}
----
+                        CONTEXT:
+                        {context}
+                        ---
 
-USER QUESTION:
-{query}
-"""
+                        USER QUESTION:
+                        {query}
+                        """
         
         messages = [
             {"role": "system", "content": system_prompt},
