@@ -1,11 +1,11 @@
-# query_pipeline.py
 import numpy as np
 from typing import List, Dict, Any
 from llama_cpp import Llama
-import torch  # --- ADD THIS IMPORT ---
-
-# Make sure to run: pip install sentence-transformers numpy torch
+import torch  
 from sentence_transformers import SentenceTransformer, util
+import os
+from dotenv import load_dotenv
+load_dotenv() 
 
 class QueryPipeline:
     """
@@ -14,34 +14,29 @@ class QueryPipeline:
     This version works entirely in-memory.
     """
     
-    # This MUST match the model used in your TextEmbedder
     EMBEDDING_MODEL_NAME = "BAAI/bge-m3"
     
     LLM_MODEL_NAME = "Llama 3.1"
     # Path to your local GGUF model
-    LLM_MODEL_PATH = "C:\\llm_models\\Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+    LLM_MODEL_PATH = os.environ.get("LLAMA_PATH")
 
     def __init__(self, chunks: List[Dict[str, Any]]):
         
-        # 1. Initialize the query embedding model
         print(f"Loading embedding model: {self.EMBEDDING_MODEL_NAME}...")
         self.embedding_model = SentenceTransformer(self.EMBEDDING_MODEL_NAME)
         
-        # 2. Store the document chunks (this is our in-memory "vector DB")
         print(f"Loading {len(chunks)} embedded chunks into memory...")
         self.chunks = chunks
         
-        # Create a numpy array for fast searching
         self.chunk_vectors = np.array([chunk['vector'] for chunk in self.chunks], dtype=np.float32)
         
-        # 3. Initialize the generative LLM
         print(f"Loading LLM from: {self.LLM_MODEL_PATH}...")
         self.llm = Llama(
             model_path=self.LLM_MODEL_PATH,
-            chat_format="llama-3", # Use the Llama 3 instruct chat format
+            chat_format="llama-3", 
             n_ctx=4096,            # Context window size
             n_gpu_layers=-1,       # Offload all layers to GPU (set to 0 for CPU)
-            verbose=False          # Suppress detailed llama.cpp logs
+            verbose=False         
         )
         
         print("Query Pipeline initialized.")

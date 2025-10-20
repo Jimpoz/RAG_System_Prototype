@@ -1,12 +1,7 @@
-# semantic_cache.py
-# This class implements a semantic cache to reduce latency.
-
 from typing import Dict, Any, List, Optional
 import time
-
-# We need an embedding model, same as the query pipeline
-# from sentence_transformers import SentenceTransformer
-import numpy as np # For similarity calculation
+from sentence_transformers import SentenceTransformer, util
+import numpy as np
 
 class SemanticCache:
     """
@@ -14,15 +9,17 @@ class SemanticCache:
     similar queries, reducing latency, as described in section 3.3.
     """
     
-    # Use the same model as the query pipeline for comparison
-    EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+    EMBEDDING_MODEL_NAME = "BAAI/bge-m3"
+    EMBEDDING_DIM = 1024
     
-    def __init__(self, similarity_threshold: float = 0.95, max_size: int = 1000):
-        # self.embedding_model = SentenceTransformer(self.EMBEDDING_MODEL_NAME)
-        self.embedding_model = "all-MiniLM-L6-v2_model_placeholder"
+    def __init__(self, embedder: SentenceTransformer, similarity_threshold: float = 0.95, max_size: int = 1000):
         
-        # Cache stores vectors and their corresponding responses
-        self.cache_vectors = []
+        # 1. Use the embedder from the pipeline
+        self.embedding_model = embedder
+        
+        # 2. Cache stores vectors and their corresponding responses
+        # Initialize as an empty array with the correct shape
+        self.cache_vectors = np.empty((0, self.EMBEDDING_DIM), dtype=np.float32)
         self.cache_responses = []
         
         self.threshold = similarity_threshold
@@ -32,76 +29,80 @@ class SemanticCache:
 
     def _get_embedding(self, query: str) -> np.ndarray:
         """Helper to get a query embedding."""
-        # return self.embedding_model.encode(query)
-        return np.random.rand(384) # Placeholder (dim=384 for MiniLM)
+        # Use the real model
+        vector = self.embedding_model.encode(query, normalize_embeddings=True)
+        return vector.astype(np.float32)
         
     def check_cache(self, query: str) -> Optional[Dict[str, Any]]:
         """
         Checks the cache for a semantically similar query.
-        
-        Args:
-            query: The incoming user query.
-
-        Returns:
-            The cached response if a similar query is found, else None.
         """
-        if not self.cache_vectors:
+        if self.cache_vectors.shape[0] == 0:
             return None # Cache is empty
             
         query_vector = self._get_embedding(query)
         
-        # Convert cache to numpy array for efficient calculation
-        cache_matrix = np.array(self.cache_vectors)
-        
-        # Calculate cosine similarity
-        # (dot product of normalized vectors)
-        query_norm = query_vector / np.linalg.norm(query_vector)
-        cache_norms = cache_matrix / np.linalg.norm(cache_matrix, axis=1, keepdims=True)
-        
-        similarities = np.dot(cache_norms, query_norm)
+        # Calculate cosine similarity (dot product of normalized vectors)
+        # The embedder and self.cache_vectors are already normalized
+        similarities = np.dot(self.cache_vectors, query_vector)
         
         # Find the best match
         best_match_idx = np.argmax(similarities)
         best_score = similarities[best_match_idx]
         
         if best_score >= self.threshold:
-            print(f"CACHE HIT! (Score: {best_score:.4f})")
-            return self.cache_responses[best_match_idx]
+            print(f"--- SEMANTIC CACHE HIT! (Score: {best_score:.4f}) ---")
+            # Return a copy of the cached response
+            return self.cache_responses[best_match_idx].copy()
         
-        print("CACHE MISS.")
+        print("--- SEMANTIC CACHE MISS ---")
         return None
 
     def add_to_cache(self, query: str, response: Dict[str, Any]):
         """
         Adds a new query and its response to the cache.
-        
-        Args:
-            query: The user query string.
-            response: The final RAG response object.
         """
-        print("Adding to cache...")
+        print("--- Adding response to semantic cache... ---")
         
-        if len(self.cache_vectors) >= self.max_size:
+        # Get the query vector to store
+        query_vector = self._get_embedding(query)
+        
+        if len(self.cache_responses) >= self.max_size:
             # Simple FIFO eviction strategy
-            self.cache_vectors.pop(0)
+            self.cache_vectors = self.cache_vectors[1:]
             self.cache_responses.pop(0)
             
-        query_vector = self._get_embedding(query)
-        self.cache_vectors.append(query_vector)
+        # Add new item
+        # Use vstack to add the new vector row
+        self.cache_vectors = np.vstack([self.cache_vectors, query_vector])
         self.cache_responses.append(response)
 
 # Example usage (if run as a script)
 if __name__ == "__main__":
-    cache = SemanticCache(similarity_threshold=0.9)
     
-    dummy_response = {"answer": "Metformin is 500mg.", "citations": []}
-    
-    # 1. Add an item
-    cache.add_to_cache("What is metformin dosage?", dummy_response)
-    
-    # 2. Check for a similar query (should be a HIT)
-    print("\nChecking for: 'How much metformin should I take?'")
-    result = cache.check_cache("How much metformin should I take?")
-    
-    # 3. Check for a different query (should be a MISS)
-    print("\nChecking for: 'What is paracetamol?'")
+    # 1. Load the real embedder model
+    try:
+        model = SentenceTransformer(SemanticCache.EMBEDDING_MODEL_NAME)
+    except Exception as e:
+        print(f"Could not load model: {e}")
+        model = None
+
+    if model:
+        cache = SemanticCache(embedder=model, similarity_threshold=0.9)
+        
+        dummy_response = {"answer": "Metformin is 500mg.", "citations": []}
+        
+        # 2. Add an item
+        cache.add_to_cache("What is metformin dosage?", dummy_response)
+        
+        # 3. Check for a similar query (should be a HIT)
+        print("\nChecking for: 'How much metformin should I take?'")
+        result = cache.check_cache("How much metformin should I take?")
+        if result:
+            print(f"Found cached answer: {result['answer']}")
+        
+        # 4. Check for a different query (should be a MISS)
+        print("\nChecking for: 'What is paracetamol?'")
+        result = cache.check_cache("What is paracetamol?")
+        if not result:
+            print("Correctly missed cache.")

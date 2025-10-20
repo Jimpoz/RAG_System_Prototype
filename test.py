@@ -1,3 +1,5 @@
+# The following test script only runs the end-to-end RAG pipeline locally
+
 import os
 import json
 from datetime import datetime
@@ -6,16 +8,30 @@ from pdf_ingestion.pdf_ingestor import PDFIngestor
 from chunking.semantic_chunker import SemanticChunker
 from embedding.text_embedder import TextEmbedder
 from query_pipeline.query_pipeline import QueryPipeline
-
+from response_validator.response_validator import ResponseValidator 
+# from supabase import create_client, Client   
 
 if __name__ == "__main__":
+
+    # try:
+    #     supabase_url = os.environ.get("SUPABASE_URL")
+    #     supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
+    #     
+    #     if not supabase_url or not supabase_key:
+    #         raise EnvironmentError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set in environment.")
+    #         
+    #     supabase: Client = create_client(supabase_url, supabase_key)
+    #     print("Successfully connected to Supabase.")
+    # except Exception as e:
+    #     print(f"Error connecting to Supabase: {e}")
+    #     sys.exit()
+    # --- (END SUPABASE LOGIC) ---
+
     # Step 1: Ingest PDF
     ingestor = PDFIngestor()
-    # PDF file to test
-    pdf_file = r"C:\Users\jimpo\Downloads\HERALD_CV-NCOV-004-Protocol_test.pdf"
+    pdf_file = r"C:\Users\jimpo\Downloads\HERALD_CV-NCOV-004-Protocol_test.pdf" # Update with your PDF path
 
     try:
-        # Check if file exists *before* trying to ingest
         if not os.path.exists(pdf_file):
             raise FileNotFoundError(f"Error: The file '{pdf_file}' was not found.")
         
@@ -24,13 +40,12 @@ if __name__ == "__main__":
     
     except FileNotFoundError as e:
         print(e)
-        print("Please check the path and try again.")
-        sys.exit()  # <-- Exit script if file is not found
+        sys.exit()
     except Exception as e:
         print(f"An error occurred during PDF ingestion: {e}")
-        sys.exit()  # <-- Exit script if ingestion fails
+        sys.exit()
 
-    # Save the structured data to a JSON file and add timestamp
+    # Save ingested data locally (optional)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_json_path = os.path.join("outputs", f"ingested_{timestamp}.json")
     os.makedirs("outputs", exist_ok=True)
@@ -38,84 +53,107 @@ if __name__ == "__main__":
         with open(output_json_path, "w", encoding="utf-8") as f:
             json.dump(document_data, f, ensure_ascii=False, indent=4)
         print(f"Successfully saved ingested data to {output_json_path}")
-    except NameError:
-        print("Error: 'document_data' does not exist. Cannot save to JSON.")
-        sys.exit()
     except Exception as e:
-        print(f"An error occurred while saving the JSON file: {e}")
-        sys.exit()
-        
-    # Step 2: Chunk Document from the latest json file in outputs/
-    chunker = SemanticChunker()
-    output_dir = "outputs"
-    
-    # Find the latest JSON file in outputs/
-    json_files = [f for f in os.listdir(output_dir) if f.endswith(".json")]
-    
-    if not json_files:
-        print("Error: No JSON files found in outputs/ directory for chunking.")
-        sys.exit()  # <-- Exit if no JSON files are found
-    else:
-        latest_file = max(json_files, key=lambda f: os.path.getmtime(os.path.join(output_dir, f)))
-        latest_file_path = os.path.join(output_dir, latest_file)
-        print(f"\nLoading {latest_file_path} for chunking...")    
-        try:
-            with open(latest_file_path, "r", encoding="utf-8") as f:
-                structured_data = json.load(f)
-            
-            chunks = chunker.chunk_document(structured_data)
-            
-            # save chunks to a file for inspection and add timestamp
-            chunks_output_path = os.path.join("outputs", f"chunks_{timestamp}.json")
-            with open(chunks_output_path, "w", encoding="utf-8") as f:
-                json.dump(chunks, f, ensure_ascii=False, indent=4)
-            
-            print(f"\nCreated {len(chunks)} semantic chunks and saved to {chunks_output_path}.")
-        
-        except json.JSONDecodeError:
-            print(f"Error: Could not decode JSON from {latest_file_path}.")
-            sys.exit()
-        except Exception as e:
-            print(f"An error occurred during chunking: {e}")
-            sys.exit()
+        print(f"Could not save local JSON: {e}")
 
+    # Step 2: Chunk Document
+    chunker = SemanticChunker()
+    try:
+        chunks = chunker.chunk_document(document_data)
+        
+        chunks_output_path = os.path.join("outputs", f"chunks_{timestamp}.json")
+        with open(chunks_output_path, "w", encoding="utf-8") as f:
+            json.dump(chunks, f, ensure_ascii=False, indent=4)
+        
+        print(f"\nCreated {len(chunks)} semantic chunks and saved to {chunks_output_path}.")
+    except Exception as e:
+        print(f"An error occurred during chunking: {e}")
+        sys.exit()
 
     # Step 3: Embed Chunks
     embedder = TextEmbedder()
     try:
         embedded_chunks = embedder.embed_batch(chunks)
         
-        # Save embedded chunks to a file for inspection
+        # Convert numpy arrays to lists for JSON serialization
+        chunks_to_save_locally = []
+        for chunk in embedded_chunks:
+            local_chunk = chunk.copy()
+            if 'vector' in local_chunk and hasattr(local_chunk['vector'], 'tolist'):
+                local_chunk['vector'] = local_chunk['vector'].tolist()
+            chunks_to_save_locally.append(local_chunk)
+
         embedded_output_path = os.path.join("outputs", f"embedded_chunks_{timestamp}.json")
         with open(embedded_output_path, "w", encoding="utf-8") as f:
-            json.dump(embedded_chunks, f, ensure_ascii=False, indent=4)
+            json.dump(chunks_to_save_locally, f, ensure_ascii=False, indent=4)
         
-        print(f"\nEmbedded chunks and saved to {embedded_output_path}.")
+        print(f"Embedded {len(embedded_chunks)} chunks and saved to {embedded_output_path}.")
+        
     except Exception as e:
         print(f"An error occurred during embedding: {e}")
+        sys.exit()
+
+    # --- (2. SUPABASE LOGIC COMMENTED OUT) ---
+    # print("\n--- Saving Embeddings to Supabase ---")
+    # data_to_insert = []
+    # for chunk in embedded_chunks:
+    #     data_to_insert.append({
+    #         'content': chunk.get('text'),
+    #         'metadata': chunk.get('metadata'),
+    #         'embedding': chunk.get('vector') 
+    #     })
+    # try:
+    #     if data_to_insert:
+    #         # ... supabase insert logic ...
+    #         print(f"(SKIPPED) Would have upserted {len(data_to_insert)} chunks to Supabase.")
+    #     else:
+    #         print("No embedded chunks to insert.")
+    # except Exception as e:
+    #     print(f"Error inserting data into Supabase: {e}")
+    #     sys.exit()
+    # --- (END SUPABASE LOGIC) ---
+
 
     # Step 4: Test Query Pipeline
-    print("\n--- Initializing Query Pipeline (This will load the LLM) ---")
+    print("\n--- Initializing Query Pipeline (In-Memory) ---")
     try:
-        # --- FIX 1: Pass your REAL embedded_chunks to the pipeline ---
         pipeline = QueryPipeline(embedded_chunks)
         
-        # --- FIX 2: Ask a REAL question about your PDF ---
+        # (Supabase pipeline commented out)
+        # pipeline = QueryPipeline(supabase) 
+        
+        validator = ResponseValidator() # VALIDATOR
+        
         test_query = "Summarize this file"
-        # Another good test: "What does ICH-E6 stand for?"
-        
-        # --- FIX 3: Call .run() and print the dictionary ---
         response_dict = pipeline.run(test_query, top_k=3)
+
+        print("\n--- VALIDATOR STEP ---")
         
+        # The 'citations' key in the response_dict holds the
+        # context chunks that were sent to the LLM.
+        is_verified = validator.verify_citations(
+            response_dict.get('answer', ''),
+            response_dict.get('citations', [])
+        )
+        
+        if not is_verified:
+            print("WARNING: Response may be a hallucination. Review carefully.")
+        else:
+            print("Response appears grounded in context.")
+            
+        # --- (END VALIDATION STEP) ---
+
         print("\n--- Final RAG Output ---")
-        
-        # This is how you print the final RAG answer
         print(f"Query: {test_query}")
         print(f"Answer: {response_dict.get('answer', 'No answer found.')}")
-        
-        print("\nCitations (Contexts provided to LLM):")
-        if response_dict.get('citations'):
-            for citation in response_dict['citations']:
+
+        if response_dict.get("citations"):
+            citations_output_path = os.path.join("outputs", f"citations_{timestamp}.json")
+            with open(citations_output_path, "w", encoding="utf-8") as f:
+                json.dump(response_dict["citations"], f, ensure_ascii=False, indent=4)
+            print(f"\nCitations saved successfully: {citations_output_path}")
+
+            for citation in response_dict["citations"]:
                 print(f"  --- {citation.get('id')} ---")
                 print(f"    Source: {citation.get('source', 'N/A')}")
                 print(f"    Page: {citation.get('page', 'N/A')}")
@@ -124,4 +162,4 @@ if __name__ == "__main__":
             print("  No citations provided.")
             
     except Exception as e:
-        print(f"An error occurred during querying: {e}")
+        print(f" An error occurred during querying: {e}")
