@@ -23,11 +23,7 @@ class ResponseValidator:
 
     def __init__(self, embedder=None):
         """
-        Optionally pass a TextEmbedder instance for semantic validation.
-        
-        *** NOTE ***: If you pass your 'TextEmbedder', you must ensure
-        it has an 'embed_text(str)' method, not just 'embed_batch(list)'.
-        Or, you must modify '_semantic_similarity' to handle batches.
+        (Optional) pass a TextEmbedder instance for semantic validation.
         """
         self.embedder = embedder
         self.stemmer = PorterStemmer()
