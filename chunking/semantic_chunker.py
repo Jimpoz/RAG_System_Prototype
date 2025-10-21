@@ -4,10 +4,7 @@ class SemanticChunker:
     MODEL_NAME = "BAAI/bge-m3"
     MAX_TOKENS = 8192
     
-    # --- UPDATED ---
-    # Use a LARGER semantic unit size (in words) as a fallback
-    # 100 words is too small. Let's aim for ~500 words, or ~2000 tokens.
-    # We will use this ONLY if a paragraph is larger than MAX_TOKENS.
+    # Use a LARGER semantic unit size (in words) as a fallback (500)
     FALLBACK_WINDOW_SIZE_WORDS = 500
     FALLBACK_OVERLAP_RATIO = 0.15
 
